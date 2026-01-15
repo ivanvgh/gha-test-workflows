@@ -1,0 +1,26 @@
+name: PR Ready for Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+env:
+  SLACK_CHANNEL: "#general"
+
+jobs:
+  notify:
+    name: Notify Ready for Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ env.SLACK_CHANNEL }}",
+              "text": "New PR: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }} by ${{ github.event.pull_request.user.login }}"
+            }
