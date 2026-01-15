@@ -1,0 +1,100 @@
+name: PR Feedback
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  notify-author:
+    name: DM Author on Feedback
+    runs-on: ubuntu-latest
+    if: |
+      github.event.pull_request.user.login != github.actor &&
+      (github.event_name == 'pull_request_review_comment' ||
+       github.event.review.state == 'changes_requested' ||
+       github.event.review.state == 'commented')
+
+    steps:
+      - name: Get Slack user ID from email
+        id: slack-user
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          GITHUB_EMAIL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/users/${{ github.event.pull_request.user.login }} | jq -r '.email // empty')
+
+          echo "GitHub email: $GITHUB_EMAIL"
+
+          if [ -n "$GITHUB_EMAIL" ]; then
+            RESPONSE=$(curl -s -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              "https://slack.com/api/users.lookupByEmail?email=$GITHUB_EMAIL")
+
+            SLACK_ID=$(echo "$RESPONSE" | jq -r '.user.id // empty')
+
+            if [ -n "$SLACK_ID" ] && [ "$SLACK_ID" != "null" ]; then
+              echo "user_id=$SLACK_ID" >> $GITHUB_OUTPUT
+              echo "found=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          echo "found=false" >> $GITHUB_OUTPUT
+
+      - name: Set notification message
+        id: message
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request_review_comment" ]; then
+            echo "emoji=💬" >> $GITHUB_OUTPUT
+            echo "title=New comment on your PR" >> $GITHUB_OUTPUT
+            echo "detail=Comment by *${{ github.actor }}*" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.review.state }}" == "changes_requested" ]; then
+            echo "emoji=🔄" >> $GITHUB_OUTPUT
+            echo "title=Changes requested on your PR" >> $GITHUB_OUTPUT
+            echo "detail=*${{ github.actor }}* requested changes" >> $GITHUB_OUTPUT
+          else
+            echo "emoji=💬" >> $GITHUB_OUTPUT
+            echo "title=New review comment on your PR" >> $GITHUB_OUTPUT
+            echo "detail=Review by *${{ github.actor }}*" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send DM to PR author
+        if: steps.slack-user.outputs.found == 'true'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ steps.slack-user.outputs.user_id }}",
+              "text": "${{ steps.message.outputs.title }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ steps.message.outputs.emoji }} *${{ steps.message.outputs.title }}*\n<${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}>"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "${{ steps.message.outputs.detail }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": { "type": "plain_text", "text": "View PR" },
+                      "url": "${{ github.event.pull_request.html_url }}"
+                    }
+                  ]
+                }
+              ]
+            }

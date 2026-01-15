@@ -1,0 +1,77 @@
+name: PR Approved
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  notify-author:
+    name: DM Author on Approval
+    runs-on: ubuntu-latest
+    if: github.event.review.state == 'approved'
+
+    steps:
+      - name: Get Slack user ID from email
+        id: slack-user
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          GITHUB_EMAIL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/users/${{ github.event.pull_request.user.login }} | jq -r '.email // empty')
+
+          echo "GitHub email: $GITHUB_EMAIL"
+
+          if [ -n "$GITHUB_EMAIL" ]; then
+            RESPONSE=$(curl -s -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              "https://slack.com/api/users.lookupByEmail?email=$GITHUB_EMAIL")
+
+            SLACK_ID=$(echo "$RESPONSE" | jq -r '.user.id // empty')
+
+            if [ -n "$SLACK_ID" ] && [ "$SLACK_ID" != "null" ]; then
+              echo "user_id=$SLACK_ID" >> $GITHUB_OUTPUT
+              echo "found=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          echo "found=false" >> $GITHUB_OUTPUT
+
+      - name: Send DM to PR author
+        if: steps.slack-user.outputs.found == 'true'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ steps.slack-user.outputs.user_id }}",
+              "text": "Your PR has been approved and is ready to merge!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Your PR has been approved!*\n<${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}>"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Approved by *${{ github.event.review.user.login }}*"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": { "type": "plain_text", "text": "Merge PR" },
+                      "url": "${{ github.event.pull_request.html_url }}"
+                    }
+                  ]
+                }
+              ]
+            }
