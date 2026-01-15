@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event.pull_request.user.login != github.actor &&
+      github.actor != 'copilot[bot]' &&
       (github.event_name == 'pull_request_review_comment' ||
        github.event.review.state == 'changes_requested' ||
        github.event.review.state == 'commented')
