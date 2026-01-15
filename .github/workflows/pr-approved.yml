@@ -16,8 +16,10 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
+          # Get email from user's commits
           GITHUB_EMAIL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/users/${{ github.event.pull_request.user.login }} | jq -r '.email // empty')
+            "https://api.github.com/repos/${{ github.repository }}/commits?author=${{ github.event.pull_request.user.login }}&per_page=1" \
+            | jq -r '.[0].commit.author.email // empty')
 
           echo "GitHub email: $GITHUB_EMAIL"
 
