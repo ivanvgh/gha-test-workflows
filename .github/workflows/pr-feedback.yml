@@ -3,8 +3,6 @@ name: PR Feedback
 on:
   pull_request_review:
     types: [submitted]
-  pull_request_review_comment:
-    types: [created]
 
 jobs:
   notify-author:
@@ -13,8 +11,7 @@ jobs:
     if: |
       github.event.pull_request.user.login != github.actor &&
       github.actor != 'copilot[bot]' &&
-      (github.event_name == 'pull_request_review_comment' ||
-       github.event.review.state == 'changes_requested' ||
+      (github.event.review.state == 'changes_requested' ||
        github.event.review.state == 'commented')
 
     steps:
@@ -48,11 +45,7 @@ jobs:
       - name: Set notification message
         id: message
         run: |
-          if [ "${{ github.event_name }}" == "pull_request_review_comment" ]; then
-            echo "emoji=💬" >> $GITHUB_OUTPUT
-            echo "title=New comment on your PR" >> $GITHUB_OUTPUT
-            echo "detail=Comment by *${{ github.actor }}*" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event.review.state }}" == "changes_requested" ]; then
+          if [ "${{ github.event.review.state }}" == "changes_requested" ]; then
             echo "emoji=🔄" >> $GITHUB_OUTPUT
             echo "title=Changes requested on your PR" >> $GITHUB_OUTPUT
             echo "detail=*${{ github.actor }}* requested changes" >> $GITHUB_OUTPUT
