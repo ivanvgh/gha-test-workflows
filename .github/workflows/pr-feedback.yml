@@ -44,16 +44,41 @@ jobs:
 
       - name: Set notification message
         id: message
+        env:
+          REVIEW_BODY: ${{ github.event.review.body }}
         run: |
           if [ "${{ github.event.review.state }}" == "changes_requested" ]; then
             echo "emoji=🔄" >> $GITHUB_OUTPUT
             echo "title=Changes requested on your PR" >> $GITHUB_OUTPUT
-            echo "detail=*${{ github.actor }}* requested changes" >> $GITHUB_OUTPUT
           else
             echo "emoji=💬" >> $GITHUB_OUTPUT
             echo "title=New review comment on your PR" >> $GITHUB_OUTPUT
-            echo "detail=Review by *${{ github.actor }}*" >> $GITHUB_OUTPUT
           fi
+
+          # Truncate comment if too long (max 200 chars)
+          if [ -n "$REVIEW_BODY" ]; then
+            TRUNCATED=$(echo "$REVIEW_BODY" | head -c 200)
+            if [ ${#REVIEW_BODY} -gt 200 ]; then
+              TRUNCATED="${TRUNCATED}..."
+            fi
+            echo "comment=$TRUNCATED" >> $GITHUB_OUTPUT
+            echo "has_comment=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_comment=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Slack payload
+        id: payload
+        env:
+          REVIEW_COMMENT: ${{ steps.message.outputs.comment }}
+        run: |
+          COMMENT_BLOCK=""
+          if [ "${{ steps.message.outputs.has_comment }}" == "true" ]; then
+            # Escape quotes for JSON
+            ESCAPED_COMMENT=$(echo "$REVIEW_COMMENT" | sed 's/"/\\"/g' | tr '\n' ' ')
+            COMMENT_BLOCK=',{"type": "section", "text": {"type": "mrkdwn", "text": "💬 _'"$ESCAPED_COMMENT"'_"}}'
+          fi
+          echo "comment_block=$COMMENT_BLOCK" >> $GITHUB_OUTPUT
 
       - name: Send DM to PR author
         if: steps.slack-user.outputs.found == 'true'
@@ -78,17 +103,18 @@ jobs:
                   "elements": [
                     {
                       "type": "mrkdwn",
-                      "text": "${{ steps.message.outputs.detail }}"
+                      "text": "👤 Reviewed by *${{ github.event.review.user.login }}*"
                     }
                   ]
-                },
-                {
+                }
+                ${{ steps.payload.outputs.comment_block }}
+                ,{
                   "type": "actions",
                   "elements": [
                     {
                       "type": "button",
-                      "text": { "type": "plain_text", "text": "View PR" },
-                      "url": "${{ github.event.pull_request.html_url }}"
+                      "text": { "type": "plain_text", "text": "View Review" },
+                      "url": "${{ github.event.review.html_url }}"
                     }
                   ]
                 }
